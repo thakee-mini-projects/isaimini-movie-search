@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>isaimini movie search</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Nunito:wght@600;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --sand: #f0c14d;
+    --sea: #14879a;
+    --deep: #0c4e5a;
+    --pink: #e4377a;
+    --foam: #fff6e4;
+    --ink: #143038;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    font-family: Nunito, "Trebuchet MS", sans-serif;
+    font-weight: 600;
+    color: var(--ink);
+    background:
+      linear-gradient(#7ec8e3 0 140px, transparent 140px),
+      var(--sand);
+  }
+  main {
+    width: min(640px, calc(100% - 1.5rem));
+    margin: 1.25rem auto 3rem;
+  }
+  .poster {
+    display: block;
+    width: 100%;
+    height: auto;
+    border: 4px solid var(--deep);
+    background: #000;
+  }
+  h1 {
+    margin: 0;
+    padding: .55rem 1rem .35rem;
+    background: var(--sea);
+    color: var(--foam);
+    font-family: "Lilita One", Nunito, sans-serif;
+    font-size: clamp(2.4rem, 8vw, 3.4rem);
+    font-weight: 400;
+    letter-spacing: .01em;
+    line-height: 1;
+    text-shadow: 3px 3px 0 var(--pink);
+    border: 4px solid var(--deep);
+    border-top: 0;
+  }
+  h1 span {
+    display: block;
+    margin-top: .15rem;
+    font-family: Nunito, sans-serif;
+    font-size: 1rem;
+    font-weight: 800;
+    letter-spacing: 0;
+    text-shadow: none;
+    color: #d8f6fb;
+  }
+  form {
+    display: flex;
+    gap: .6rem;
+    margin-top: 1rem;
+  }
+  input, button {
+    font: inherit;
+    border: 3px solid var(--deep);
+    border-radius: 6px;
+  }
+  input {
+    flex: 1;
+    min-width: 0;
+    padding: .7rem .85rem;
+    background: white;
+    color: var(--ink);
+  }
+  input:focus, button:focus-visible {
+    outline: 3px solid var(--pink);
+    outline-offset: 2px;
+  }
+  button {
+    padding: .7rem 1.1rem;
+    background: var(--pink);
+    color: white;
+    font-weight: 800;
+    cursor: pointer;
+  }
+  button:hover { background: #c42566; }
+  #status {
+    min-height: 1.4em;
+    margin: .8rem .1rem .35rem;
+    color: var(--deep);
+    font-weight: 800;
+  }
+  #progress { margin: 0 .1rem .7rem; }
+  #progress[hidden] { display: none; }
+  .track {
+    position: relative;
+    height: 16px;
+    overflow: hidden;
+    border: 3px solid var(--deep);
+    border-radius: 999px;
+    background: var(--foam);
+  }
+  .fill {
+    height: 100%;
+    width: 0;
+    background: linear-gradient(90deg, var(--sea), var(--pink) 55%, #ffd0e4);
+    background-size: 200% 100%;
+    transition: width .3s ease;
+    animation: sheen 1.1s linear infinite;
+  }
+  .fill.indeterminate {
+    width: 36%;
+    transition: none;
+    animation: slide 1s ease-in-out infinite;
+  }
+  @keyframes sheen {
+    from { background-position: 100% 0; }
+    to { background-position: -100% 0; }
+  }
+  @keyframes slide {
+    from { transform: translateX(-120%); }
+    to { transform: translateX(320%); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .fill { animation: none; transition: none; }
+  }
+  #results {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    background: var(--foam);
+    border: 3px solid var(--deep);
+    border-radius: 6px;
+  }
+  #results:empty { display: none; }
+  li + li { border-top: 2px solid #f0d9a0; }
+  a {
+    display: block;
+    padding: .75rem .9rem;
+    color: var(--deep);
+    font-weight: 800;
+    text-decoration: none;
+  }
+  a:hover { background: #fff; color: var(--pink); }
+  #empty { margin: .2rem 0 0; }
+  #empty img {
+    display: block;
+    width: 100%;
+    height: auto;
+    border: 4px solid var(--deep);
+  }
+  #empty figcaption {
+    margin: 0;
+    padding: .75rem .9rem;
+    background: var(--foam);
+    border: 3px solid var(--deep);
+    border-top: 0;
+    color: var(--deep);
+    font-weight: 800;
+  }
+  @media (max-width: 520px) {
+    form { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <img class="poster" src="search_bar_above.jpg" alt="A person at the beach looking through their hands like binoculars">
+  <h1>isaimini<span>movie search</span></h1>
+  <form id="form">
+    <input id="q" name="q" placeholder="Movie name" autocomplete="off" required>
+    <button type="submit">Search</button>
+  </form>
+  <p id="status"></p>
+  <div id="progress" hidden>
+    <div class="track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Search progress">
+      <div class="fill indeterminate" id="fill"></div>
+    </div>
+  </div>
+  <ul id="results"></ul>
+  <figure id="empty" hidden>
+    <img src="nothing_found.jpg" alt="">
+    <figcaption></figcaption>
+  </figure>
+</main>
+<script>
+const ORIGIN = "https://moviesda36.com";
+// shortcut: the catalog blocks browser reads, so pages are loaded through r.jina.ai (about 20 requests a minute). Swap this if that reader starts refusing.
+
+function pageUrl(letter, page) {
+  return `https://r.jina.ai/${ORIGIN}/tamil-movies/${encodeURIComponent(letter)}/?page=${page}`;
+}
+
+function rankFile(title) {
+  const s = title.toLowerCase();
+  if (s.includes("sample")) return 90;
+  if (s.includes("1080")) return 0;
+  if (s.includes("720")) return 1;
+  if (s.includes("original") || s.includes("season")) return 2;
+  if (s.includes("mp4 hd") || s.includes("mp4 hq")) return 3;
+  if (s.includes("mp4")) return 4;
+  if (s.includes("3gp")) return 8;
+  return 7;
+}
+
+function pixels(title) {
+  const size = title.match(/(\d{3,4})\s*x\s*(\d{3,4})/i);
+  if (size) return Number(size[1]) * Number(size[2]);
+  const p = title.match(/(\d{3,4})p/i);
+  return p ? Number(p[1]) : 0;
+}
+
+function chooseFile(folders) {
+  if (!folders.length) return null;
+  return folders.slice().sort((a, b) => rankFile(a.title) - rankFile(b.title) || pixels(b.title) - pixels(a.title))[0];
+}
+
+function foldersFrom(html, base) {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const folders = [];
+  for (const a of doc.querySelectorAll("div.f a[href]")) {
+    const href = a.getAttribute("href");
+    const title = a.textContent.replace(/\s+/g, " ").trim();
+    if (!title || !href || href === "#" || href.startsWith("/tamil-movies/")) continue;
+    folders.push({ title, url: new URL(href, base).href });
+  }
+  return folders;
+}
+
+function matchesFrom(text, needle) {
+  const re = /\[([^\]]+)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
+  const out = [];
+  const seen = new Set();
+  let pages = 1;
+  let m;
+  while ((m = re.exec(text))) {
+    const title = m[1].replace(/\s+/g, " ").trim();
+    const url = m[2];
+    const page = url.match(/[?&]page=(\d+)/);
+    if (page) pages = Math.max(pages, Number(page[1]));
+    if (!title || url.includes("?page=") || url.endsWith("#")) continue;
+    if (!title.toLowerCase().includes(needle)) continue;
+    if (seen.has(url)) continue;
+    seen.add(url);
+    out.push({ title, url });
+  }
+  return { pages, out };
+}
+
+function selfCheck() {
+  const text = "[Akka (2026)](https://moviesda36.com/akka-2026-tamil-movie/)[3](https://moviesda36.com/tamil-movies/a/?page=3)[1](https://moviesda36.com/tamil-movies/a/?page=1#)";
+  const { pages, out } = matchesFrom(text, "akka");
+  const chosen = chooseFile([
+    { title: "Mp4 HD (480x320)", url: "low" },
+    { title: "Mp4 HD (640x360)", url: "high" },
+    { title: "Sample", url: "sample" },
+  ]);
+  const html = `<div class="f"><a href="/anbe-diana-original-movie/">Anbe Diana (Original)</a></div><div class="inline-list-atoz"><a href="/tamil-movies/a/">A</a></div>`;
+  const folders = foldersFrom(html, ORIGIN + "/anbe-diana-2026-tamil-movie/");
+  if (pages !== 3 || out.length !== 1 || out[0].url !== ORIGIN + "/akka-2026-tamil-movie/") {
+    throw new Error("parser self-check failed");
+  }
+  if (chosen.url !== "high" || folders.length !== 1 || !folders[0].url.endsWith("/anbe-diana-original-movie/")) {
+    throw new Error("file-page self-check failed");
+  }
+}
+selfCheck();
+
+const statusEl = document.querySelector("#status");
+const progressEl = document.querySelector("#progress");
+const trackEl = progressEl.querySelector(".track");
+const fillEl = document.querySelector("#fill");
+const resultsEl = document.querySelector("#results");
+const emptyEl = document.querySelector("#empty");
+const emptyText = emptyEl.querySelector("figcaption");
+let current = null;
+
+function showProgress(done, total) {
+  progressEl.hidden = false;
+  if (!total) {
+    fillEl.classList.add("indeterminate");
+    fillEl.style.width = "";
+    trackEl.setAttribute("aria-valuenow", "0");
+    return;
+  }
+  const pct = Math.round((done / total) * 100);
+  fillEl.classList.remove("indeterminate");
+  fillEl.style.width = pct + "%";
+  trackEl.setAttribute("aria-valuenow", String(pct));
+  statusEl.textContent = `Page ${done} of ${total} · ${pct}%`;
+}
+
+function hideProgress() {
+  progressEl.hidden = true;
+  fillEl.style.width = "0";
+  fillEl.classList.add("indeterminate");
+  trackEl.setAttribute("aria-valuenow", "0");
+}
+
+function addResult(item) {
+  const li = document.createElement("li");
+  const a = document.createElement("a");
+  a.href = item.url;
+  a.textContent = item.title;
+  a.target = "_blank";
+  a.rel = "noopener";
+  li.append(a);
+  resultsEl.append(li);
+}
+
+document.querySelector("#form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const needle = document.querySelector("#q").value.trim().toLowerCase();
+  if (!needle) return;
+  current?.abort();
+  const ctl = current = new AbortController();
+  resultsEl.replaceChildren();
+  emptyEl.hidden = true;
+  let found = 0;
+  const letter = needle[0].toUpperCase();
+  try {
+    statusEl.textContent = `Looking through ${letter}…`;
+    showProgress(0, 0);
+    const first = await fetch(pageUrl(needle[0], 1), { signal: ctl.signal });
+    if (!first.ok) throw new Error(`HTTP ${first.status} for page 1`);
+    const parsed = matchesFrom(await first.text(), needle);
+    const matches = parsed.out.slice();
+    showProgress(1, parsed.pages);
+    for (let page = 2; page <= parsed.pages; page++) {
+      statusEl.textContent = `Page ${page} of ${parsed.pages} · ${Math.round(((page - 1) / parsed.pages) * 100)}%`;
+      const res = await fetch(pageUrl(needle[0], page), { signal: ctl.signal });
+      if (!res.ok) throw new Error(`HTTP ${res.status} for page ${page}`);
+      matches.push(...matchesFrom(await res.text(), needle).out);
+      showProgress(page, parsed.pages);
+    }
+    for (let i = 0; i < matches.length; i++) {
+      const info = matches[i];
+      const pct = Math.round((i / matches.length) * 100);
+      fillEl.classList.remove("indeterminate");
+      fillEl.style.width = pct + "%";
+      trackEl.setAttribute("aria-valuenow", String(pct));
+      statusEl.textContent = `Opening movie page ${i + 1} of ${matches.length} · ${pct}%`;
+      let item = info;
+      try {
+        const res = await fetch(`https://r.jina.ai/${info.url}`, {
+          signal: ctl.signal,
+          headers: { "X-Return-Format": "html", "Accept": "text/html" },
+        });
+        if (res.ok) {
+          const folders = foldersFrom(await res.text(), info.url);
+          const folder = chooseFile(folders);
+          if (folder) {
+            item = {
+              title: folders.length > 1 ? `${info.title} · ${folder.title}` : info.title,
+              url: folder.url,
+            };
+          }
+        }
+      } catch (err) {
+        if (err.name === "AbortError") throw err;
+      }
+      addResult(item);
+      found += 1;
+    }
+    if (found) {
+      statusEl.textContent = `Found ${found}.`;
+    } else {
+      statusEl.textContent = "";
+      emptyText.textContent = `Nothing found for “${needle}”.`;
+      emptyEl.hidden = false;
+      emptyEl.scrollIntoView({
+        behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+        block: "end",
+      });
+    }
+  } catch (err) {
+    if (err.name === "AbortError") return;
+    emptyEl.hidden = true;
+    statusEl.textContent = err instanceof TypeError
+      ? "The listing reader blocked this request. Reload and try again."
+      : err.message;
+  } finally {
+    if (current === ctl) hideProgress();
+  }
+});
+</script>
+</body>
+</html>
