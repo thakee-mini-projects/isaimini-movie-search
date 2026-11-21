@@ -282,7 +282,7 @@ const emptyEl = document.querySelector("#empty");
 const emptyText = emptyEl.querySelector("figcaption");
 let current = null;
 
-function showProgress(done, total) {
+function showProgress(done, total, found) {
   progressEl.hidden = false;
   if (!total) {
     fillEl.classList.add("indeterminate");
@@ -294,7 +294,7 @@ function showProgress(done, total) {
   fillEl.classList.remove("indeterminate");
   fillEl.style.width = pct + "%";
   trackEl.setAttribute("aria-valuenow", String(pct));
-  statusEl.textContent = `Page ${done} of ${total} · ${pct}%`;
+  statusEl.textContent = `Page ${done} of ${total} · ${pct}%${found ? ` · ${found} found` : ""}`;
 }
 
 function hideProgress() {
@@ -330,44 +330,65 @@ document.querySelector("#form").addEventListener("submit", async (event) => {
     showProgress(0, 0);
     const first = await fetch(pageUrl(needle[0], 1), { signal: ctl.signal });
     if (!first.ok) throw new Error(`HTTP ${first.status} for page 1`);
-    const parsed = matchesFrom(await first.text(), needle);
-    const matches = parsed.out.slice();
-    showProgress(1, parsed.pages);
-    for (let page = 2; page <= parsed.pages; page++) {
-      statusEl.textContent = `Page ${page} of ${parsed.pages} · ${Math.round(((page - 1) / parsed.pages) * 100)}%`;
-      const res = await fetch(pageUrl(needle[0], page), { signal: ctl.signal });
-      if (!res.ok) throw new Error(`HTTP ${res.status} for page ${page}`);
-      matches.push(...matchesFrom(await res.text(), needle).out);
-      showProgress(page, parsed.pages);
-    }
-    for (let i = 0; i < matches.length; i++) {
-      const info = matches[i];
-      const pct = Math.round((i / matches.length) * 100);
-      fillEl.classList.remove("indeterminate");
-      fillEl.style.width = pct + "%";
-      trackEl.setAttribute("aria-valuenow", String(pct));
-      statusEl.textContent = `Opening movie page ${i + 1} of ${matches.length} · ${pct}%`;
-      let item = info;
-      try {
-        const res = await fetch(`https://r.jina.ai/${info.url}`, {
-          signal: ctl.signal,
-          headers: { "X-Return-Format": "html", "Accept": "text/html" },
-        });
-        if (res.ok) {
+    const opening = [];
+    let slots = 0;
+    const waiters = [];
+    const takeSlot = () => slots < 4
+      ? Promise.resolve(++slots)
+      : new Promise(resolve => waiters.push(resolve)).then(() => ++slots);
+    const freeSlot = () => { slots--; waiters.shift()?.(); };
+    // shortcut: 4 movie pages at a time, the reader allows about 20 requests a minute
+    const follow = (info) => {
+      const li = document.createElement("li");
+      const a = document.createElement("a");
+      a.href = info.url;
+      a.textContent = info.title;
+      a.target = "_blank";
+      a.rel = "noopener";
+      li.append(a);
+      resultsEl.append(li);
+      found += 1;
+      opening.push((async () => {
+        await takeSlot();
+        try {
+          const res = await fetch(`https://r.jina.ai/${info.url}`, {
+            signal: ctl.signal,
+            headers: { "X-Return-Format": "html", "Accept": "text/html" },
+          });
+          if (!res.ok) return;
           const folders = foldersFrom(await res.text(), info.url);
           const folder = chooseFile(folders);
-          if (folder) {
-            item = {
-              title: folders.length > 1 ? `${info.title} · ${folder.title}` : info.title,
-              url: folder.url,
-            };
-          }
+          if (!folder) return;
+          a.href = folder.url;
+          if (folders.length > 1) a.textContent = `${info.title} · ${folder.title}`;
+        } catch (err) {
+          if (err.name === "AbortError") throw err;
+        } finally {
+          freeSlot();
         }
-      } catch (err) {
-        if (err.name === "AbortError") throw err;
-      }
-      addResult(item);
-      found += 1;
+      })());
+    };
+    const parsed = matchesFrom(await first.text(), needle);
+    parsed.out.forEach(follow);
+    showProgress(1, parsed.pages, found);
+    for (let page = 2; page <= parsed.pages; page++) {
+      const pct = Math.round(((page - 1) / parsed.pages) * 100);
+      statusEl.textContent = `Page ${page} of ${parsed.pages} · ${pct}%${found ? ` · ${found} found` : ""}`;
+      const res = await fetch(pageUrl(needle[0], page), { signal: ctl.signal });
+      if (!res.ok) throw new Error(`HTTP ${res.status} for page ${page}`);
+      matchesFrom(await res.text(), needle).out.forEach(follow);
+      showProgress(page, parsed.pages, found);
+    }
+    if (opening.length) {
+      let opened = 0;
+      await Promise.all(opening.map(job => job.then(() => {
+        opened += 1;
+        const pct = Math.round((opened / opening.length) * 100);
+        fillEl.classList.remove("indeterminate");
+        fillEl.style.width = pct + "%";
+        trackEl.setAttribute("aria-valuenow", String(pct));
+        statusEl.textContent = `Opening movie pages · ${pct}% · ${found} found`;
+      })));
     }
     if (found) {
       statusEl.textContent = `Found ${found}.`;
