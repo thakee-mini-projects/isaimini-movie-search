@@ -192,11 +192,7 @@
 </main>
 <script>
 const ORIGIN = "https://moviesda36.com";
-// shortcut: the catalog blocks browser reads, so pages are loaded through r.jina.ai (about 20 requests a minute). Swap this if that reader starts refusing.
-
-function pageUrl(letter, page) {
-  return `https://r.jina.ai/${ORIGIN}/tamil-movies/${encodeURIComponent(letter)}/?page=${page}`;
-}
+// shortcut: the catalog blocks browser reads, so pages go through r.jina.ai, which allows about 20 requests a minute. Requests are spaced 3.5s apart. Widen that gap if 429s come back.
 
 function rankFile(title) {
   const s = title.toLowerCase();
@@ -328,16 +324,38 @@ document.querySelector("#form").addEventListener("submit", async (event) => {
   try {
     statusEl.textContent = `Looking through ${letter}…`;
     showProgress(0, 0);
-    const first = await fetch(pageUrl(needle[0], 1), { signal: ctl.signal });
-    if (!first.ok) throw new Error(`HTTP ${first.status} for page 1`);
+    const GAP = 3500;
+    let last = 0;
+    let chain = Promise.resolve();
+    const delay = (ms) => new Promise((resolve, reject) => {
+      const t = setTimeout(resolve, ms);
+      ctl.signal.addEventListener("abort", () => {
+        clearTimeout(t);
+        reject(Object.assign(new Error("aborted"), { name: "AbortError" }));
+      }, { once: true });
+    });
+    const read = (url, html) => {
+      const run = chain.then(async () => {
+        const wait = Math.max(0, last + GAP - Date.now());
+        if (wait) await delay(wait);
+        last = Date.now();
+        for (let attempt = 0; attempt < 4; attempt++) {
+          const res = await fetch(`https://r.jina.ai/${url}`, {
+            signal: ctl.signal,
+            headers: html ? { "X-Return-Format": "html", "Accept": "text/html" } : {},
+          });
+          if (res.status !== 429) return res;
+          const pause = 8000 * (attempt + 1);
+          last = Date.now() + pause;
+          statusEl.textContent = `Reader is busy, waiting ${pause / 1000}s…`;
+          await delay(pause);
+        }
+        throw new Error("The reader is still busy. Wait a minute and search again.");
+      });
+      chain = run.then(() => {}, () => {});
+      return run;
+    };
     const opening = [];
-    let slots = 0;
-    const waiters = [];
-    const takeSlot = () => slots < 4
-      ? Promise.resolve(++slots)
-      : new Promise(resolve => waiters.push(resolve)).then(() => ++slots);
-    const freeSlot = () => { slots--; waiters.shift()?.(); };
-    // shortcut: 4 movie pages at a time, the reader allows about 20 requests a minute
     const follow = (info) => {
       const li = document.createElement("li");
       const a = document.createElement("a");
@@ -349,32 +367,25 @@ document.querySelector("#form").addEventListener("submit", async (event) => {
       resultsEl.append(li);
       found += 1;
       opening.push((async () => {
-        await takeSlot();
-        try {
-          const res = await fetch(`https://r.jina.ai/${info.url}`, {
-            signal: ctl.signal,
-            headers: { "X-Return-Format": "html", "Accept": "text/html" },
-          });
-          if (!res.ok) return;
-          const folders = foldersFrom(await res.text(), info.url);
-          const folder = chooseFile(folders);
-          if (!folder) return;
-          a.href = folder.url;
-          if (folders.length > 1) a.textContent = `${info.title} · ${folder.title}`;
-        } catch (err) {
-          if (err.name === "AbortError") throw err;
-        } finally {
-          freeSlot();
-        }
+        const res = await read(info.url, true);
+        if (!res.ok) return;
+        const folders = foldersFrom(await res.text(), info.url);
+        const folder = chooseFile(folders);
+        if (!folder) return;
+        a.href = folder.url;
+        if (folders.length > 1) a.textContent = `${info.title} · ${folder.title}`;
       })());
     };
+    const letterUrl = (page) => `${ORIGIN}/tamil-movies/${encodeURIComponent(needle[0])}/?page=${page}`;
+    const first = await read(letterUrl(1));
+    if (!first.ok) throw new Error(`HTTP ${first.status} for page 1`);
     const parsed = matchesFrom(await first.text(), needle);
     parsed.out.forEach(follow);
     showProgress(1, parsed.pages, found);
     for (let page = 2; page <= parsed.pages; page++) {
       const pct = Math.round(((page - 1) / parsed.pages) * 100);
       statusEl.textContent = `Page ${page} of ${parsed.pages} · ${pct}%${found ? ` · ${found} found` : ""}`;
-      const res = await fetch(pageUrl(needle[0], page), { signal: ctl.signal });
+      const res = await read(letterUrl(page));
       if (!res.ok) throw new Error(`HTTP ${res.status} for page ${page}`);
       matchesFrom(await res.text(), needle).out.forEach(follow);
       showProgress(page, parsed.pages, found);
